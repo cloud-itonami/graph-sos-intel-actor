@@ -1,0 +1,39 @@
+#!/usr/bin/env nbb
+;; run_tests.cljs — graph-sos-intel-actor の検査。
+;;
+;;   nbb --classpath src:test run_tests.cljs
+;;
+;; この repo は 2026-05 の移行 snapshot 以来、**この runtime で走るテストを
+;; 1 本も持っていなかった。** `actor-manifest.test.ts` は在るが package.json が
+;; 無いので `npx --yes vitest` を取りに行ける環境でしか走らず、オフラインでは
+;; 静かに何も検査しない。**走らないテストは、テストが無いより悪い** ——
+;; 在ることが検査済みに見える。
+;;
+;; workspace の規則（superproject CLAUDE.md）で script host は nbb に一本化されて
+;; おり、新規の .ts / .mjs / .sh は禁止。よって runner は nbb + cljs.test である。
+;;
+;; 3 面を見る:
+;;   gate-test      deny-by-default gate（緩む方向と きつくなる方向の両方から）
+;;   manifest-test  manifest / DID document / storage profile と substrate の突き合わせ
+;;   docs-test      README と quickstart が主張していることの再現
+(ns run-tests
+  (:require [clojure.test :as t]
+            [graph_sos_intel.gate-test]
+            [graph_sos_intel.manifest-test]
+            [graph_sos_intel.docs-test]))
+
+(def green-marker
+  "scripts/maturity-loop/mutations.edn の `:green-marker`。
+   全部緑のときだけ出る —— 出力に現れるかどうかで mutation が噛んだかを判定する
+   ので、緑でないときに印字してはならない。"
+  "graph-sos-intel actor: all green")
+
+(defmethod t/report [:cljs.test/default :end-run-tests] [m]
+  (if (t/successful? m)
+    (println (str "\n" green-marker))
+    (do (println "\ngraph-sos-intel actor: FAILED")
+        (js/process.exit 1))))
+
+(t/run-tests 'graph_sos_intel.gate-test
+             'graph_sos_intel.manifest-test
+             'graph_sos_intel.docs-test)

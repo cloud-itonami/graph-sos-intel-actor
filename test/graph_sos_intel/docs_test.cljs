@@ -1,0 +1,115 @@
+(ns graph_sos_intel.docs-test
+  "README と operator quickstart が主張していることを、**その文書から読み取って**
+   実物と突き合わせる。
+
+   数を書き写すと、写した瞬間から腐り始める —— 文書は自分が真でなくなったことに
+   気づかない。だからここでは期待値を文書から抜き、比較相手は実際に計算する。
+   文書を直せば期待値も動く。実物が動けば赤くなる。"
+  (:require [clojure.test :refer [deftest is]]
+            [clojure.string :as str]
+            [graph_sos_intel.murakumo :as mk]
+            ["node:fs" :as fs]))
+
+(def readme (fs/readFileSync "README.md" "utf8"))
+(def quickstart (fs/readFileSync "docs/operator-quickstart.md" "utf8"))
+(def manifest (js->clj (js/JSON.parse (fs/readFileSync "actor-manifest.jsonld" "utf8"))))
+
+(defn- claim
+  "quickstart 中の `key: value` / `\"key\": value` を 1 つ読む。
+   読み取れなかったら nil を返す —— 呼び手は必ず `some?` を検査すること
+   （文書側の書式が変わったのに『一致した』と読むのが、この形の一番静かな失敗）。"
+  [re]
+  (some-> (re-find re quickstart) second str/trim))
+
+;; ── §1 manifest を覗く ────────────────────────────────────────────────
+
+(deftest the-quickstarts-manifest-numbers-are-the-manifests-numbers
+  (let [id   (claim #"\"id\": \"([^\"]+)\"")
+        rt   (claim #"\"runtime\": \"([^\"]+)\"")
+        caps (claim #"\"capabilities\": (\d+)")
+        pipe (claim #"\"pipelines\": (\d+)")]
+    (is (some? id) "quickstart から id が読めない")
+    (is (some? caps) "quickstart から capabilities 数が読めない")
+    (is (some? pipe) "quickstart から pipelines 数が読めない")
+    (is (= (get manifest "@id") id))
+    (is (= (get manifest "runtime") rt))
+    (is (= (count (get manifest "capabilities")) (js/parseInt caps)))
+    (is (= (count (get manifest "pipelines")) (js/parseInt pipe)))))
+
+(deftest the-quickstart-names-exactly-the-governance-rules-that-exist
+  (let [named (set (map second (re-seq #"\"(RULE-[A-Z-]+)\"" quickstart)))
+        actual (set (map #(get % "id") (get-in manifest ["governance" "rules"])))]
+    (is (seq named) "quickstart が rule を 1 つも名指ししていない")
+    (is (= actual named))))
+
+;; ── §3 actor boundary を実演する ──────────────────────────────────────
+
+(deftest the-quickstarts-blocked-demonstration-still-reproduces
+  ;; quickstart は「無 attest なら blocked / missing 7 / effects 0」と書いている。
+  ;; 書いてある数を読み、同じ呼び出しを実際に行って比べる。
+  (let [plan (mk/cell-plan :health {:attestations {}})
+        status  (claim #"blocked status: (:\S+)")
+        missing (claim #"missing gates: (\d+)")
+        effects (claim #"effects: (\d+)")]
+    (is (some? status) "quickstart から blocked の status が読めない")
+    (is (some? missing) "quickstart から missing gates 数が読めない")
+    (is (= (str (:status plan)) status))
+    (is (= (count (:missing-gates plan)) (js/parseInt missing)))
+    (is (= (count (:effects plan)) (js/parseInt effects)))))
+
+(deftest the-quickstarts-ready-demonstration-still-reproduces
+  ;; quickstart のコマンドと同じ入力（全 gate attest・request-id "qs-demo-1"）で
+  ;; 同じ出力になるか。**ここが赤くなったら、quickstart は踏めなくなっている。**
+  (let [atts (into {} (map (fn [g] [g true]) mk/common-gates))
+        plan (mk/cell-plan :health {:attestations atts
+                                    :computed-at "2026-08-25T00:00:00Z"
+                                    :request-id "qs-demo-1"})
+        status (claim #"ready status: (:\S+)")
+        coll   (claim #"(?m)^collection: (\S+)$")
+        rkey   (claim #"(?m)^rkey: (\S+)$")]
+    (is (some? status) "quickstart から ready の status が読めない")
+    (is (some? coll) "quickstart から collection が読めない")
+    (is (some? rkey) "quickstart から rkey が読めない")
+    (is (= (str (:status plan)) status))
+    (is (= (:collection (first (:records plan))) coll))
+    (is (= (:rkey (first (:records plan))) rkey))
+    (is (= "[:mst/put-record]" (str (mapv :op (:effects plan))))
+        "quickstart が示す effects の形")))
+
+(deftest the-quickstart-command-really-passes-the-classpath-the-source-needs
+  ;; `nbb --classpath src` と書いてあるので、src/ の下に ns が居ることが前提。
+  ;; ディレクトリを動かすと quickstart が踏めなくなる。
+  (is (str/includes? quickstart "nbb --classpath src"))
+  (is (fs/existsSync "src/graph_sos_intel/murakumo.cljc")))
+
+;; ── README ────────────────────────────────────────────────────────────
+
+(deftest the-readme-lists-exactly-the-seven-gates-the-code-requires
+  ;; 散文で並べた 7 本は、コード側が 1 本増減しても黙って古いまま残る。
+  ;; 読むのは「requires all seven common gates (...)」の括弧の中だけ ——
+  ;; 節全体から拾うと `:blocked` / `:ready` まで gate として数えてしまう。
+  (let [listed (second (re-find #"(?s)common gates\s*\n?\((.*?)\)\. A plan" readme))
+        named (set (map #(keyword (subs (second %) 1)) (re-seq #"`(:[a-z-]+)`" (or listed ""))))]
+    (is (some? listed) "README が gate を括弧で列挙している箇所が見つからない")
+    (is (str/includes? readme "all seven common gates"))
+    (is (= (set mk/common-gates) named))))
+
+(deftest every-path-the-readme-table-links-to-exists
+  ;; README は「この repo に何が在るか」の表を持つ。消えたファイルを指したまま
+  ;; になるのが一番よくある腐り方。
+  (let [paths (set (map second (re-seq #"\]\(([^)#][^)]*)\)" readme)))]
+    (is (<= 5 (count paths)) "README のリンクが少なすぎる —— 表が消えていないか")
+    (doseq [p paths]
+      (is (fs/existsSync p) (str "README が存在しないパスを指している: " p)))))
+
+(deftest the-readme-gate-claim-matches-what-a-blocked-plan-actually-carries
+  ;; README は「missing があれば :blocked で effect は **zero**」と書いている。
+  (is (str/includes? readme "zero"))
+  (let [plan (mk/cell-plan :listfindings {:attestations {:no-probing-baseline true}})]
+    (is (= :blocked (:status plan)))
+    (is (= 0 (count (:effects plan))))))
+
+(deftest the-quickstart-still-says-when-it-was-walked
+  ;; 「実際に実行した」と書いてある文書は、いつ実行したかを名乗る義務がある ——
+  ;; 日付が無い『実行済み』は検証できない主張である。
+  (is (re-find #"(?m)^Every step below was actually executed on \d{4}-\d{2}-\d{2}" quickstart)))

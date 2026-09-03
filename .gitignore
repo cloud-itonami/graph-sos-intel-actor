@@ -1,0 +1,2 @@
+# `npx --yes vitest` (operator quickstart step 2) drops a cache here.
+node_modules/
