@@ -1,0 +1,201 @@
+(ns graph_sos_intel.manifest-test
+  "descriptor 本体（`actor-manifest.jsonld` / `.well-known/did.json` /
+   `storage-profile.edn`）と、`src/graph_sos_intel/murakumo.cljc` の substrate を
+   突き合わせる。
+
+   この repo は宣言が 3 面（manifest / DID document / cljc substrate）に割れて
+   いて、**どの面も他の面を見ていない**。3 面のあいだの事実はどの面にも属さない
+   ので、片方だけ動いても誰も気づかない —— ここがその置き場である。
+
+   count は**両方向に**落ちる。増えても減っても赤。"
+  (:require [clojure.test :refer [deftest is testing]]
+            [clojure.string :as str]
+            [cljs.reader :as reader]
+            [graph_sos_intel.murakumo :as mk]
+            ["node:fs" :as fs]))
+
+(def manifest (js->clj (js/JSON.parse (fs/readFileSync "actor-manifest.jsonld" "utf8"))))
+(def did-doc  (js->clj (js/JSON.parse (fs/readFileSync ".well-known/did.json" "utf8"))))
+(def vitest-src (fs/readFileSync "actor-manifest.test.ts" "utf8"))
+
+(def pipelines (get manifest "pipelines"))
+(def steps (vec (mapcat #(get % "steps") pipelines)))
+(def nsids (vec (keep #(get-in % ["trigger" "nsid"]) pipelines)))
+
+;; ── manifest が宣言している「面」から substrate を導出する ──────────────
+;;
+;; cell-specs は手書きに見えるが、実際は manifest の 3 つの列から機械的に
+;; 導ける: xrpc の nsid・requiredCollections・requiredLoops。
+;; 導出できることを検査すると、**どちら側が動いても**赤くなる。
+(defn- declared-surfaces []
+  (concat nsids (get manifest "requiredCollections") (get manifest "requiredLoops")))
+
+(defn- surface->cell [s]
+  (keyword (str/lower-case (last (str/split s #"\.")))))
+
+(deftest the-substrate-cells-are-exactly-the-surfaces-the-manifest-declares
+  ;; 実測 2026-09-03: 9 = xrpc 3 + requiredCollections 2 + requiredLoops 4。
+  ;; manifest に surface を足して substrate に cell を足し忘れると、その surface は
+  ;; **gate を一度も通らない**（cell-plan が unknown cell で throw する）。
+  (is (= 9 (count (declared-surfaces))))
+  (is (= (set (map surface->cell (declared-surfaces)))
+         (set (keys mk/cell-specs)))
+      "manifest の surface と substrate の cell が 1:1 に対応する"))
+
+(deftest each-legacy-cell-name-is-its-surface-with-dots-turned-into-dashes
+  ;; legacy-cell は移行前の実行系が使っていた名前で、**手打ちすると静かにずれる**
+  ;; （`graphSosIntel` の大小が 1 文字違うだけで、旧系の記録と繋がらなくなる）。
+  (doseq [s (declared-surfaces)]
+    (let [cell (surface->cell s)]
+      (is (= (str/replace s "." "-") (:legacy-cell (get mk/cell-specs cell)))
+          (str cell " の legacy-cell が surface から導けない")))))
+
+(deftest every-cell-writes-into-this-actors-own-namespace
+  (doseq [[cell spec] mk/cell-specs]
+    (is (= [(str "com.etzhayyim.graph-sos-intel." (name cell))] (:collections spec))
+        (str cell " の collection が名乗りの外を指している"))))
+
+(def common-gates-set (set mk/common-gates))
+
+(deftest substrate-census-matches
+  (is (= 9 (count mk/cell-specs)))
+  (is (= 7 (count mk/common-gates)))
+  (is (= (count mk/common-gates) (count (set mk/common-gates))) "gate に重複が無い")
+  (is (every? #(= common-gates-set (set (:required-gates %))) (vals mk/cell-specs))
+      "cell ごとに gate 集合が違わない（1 本だけ緩い cell が抜け道になる）"))
+
+
+(deftest manifest-census-matches
+  (is (= 5 (count pipelines)))
+  (is (= 13 (count steps)))
+  (is (= {"cron" 2 "xrpc" 3} (frequencies (map #(get-in % ["trigger" "type"]) pipelines))))
+  (is (= 2 (count (get manifest "requiredCollections"))))
+  (is (= 4 (count (get manifest "requiredLoops"))))
+  (is (= 4 (count (get manifest "capabilities")))))
+
+(deftest steps-never-call-an-undeclared-capability
+  (let [declared (set (get manifest "capabilities"))
+        used (set (map #(get % "fn") steps))]
+    (is (empty? (remove declared used))
+        (str "宣言されていない capability を呼んでいる: " (pr-str (remove declared used))))
+    ;; **『直った』方向にも落ちる。** 使われない宣言は over-grant なので、
+    ;; 今ちょうど 0 であることを固定する —— 増えたら測り直す。
+    (is (empty? (remove used declared))
+        (str "宣言されているのに一度も使われない capability: " (pr-str (remove used declared))))))
+
+(deftest every-step-is-fully-formed
+  (doseq [s steps]
+    (is (some? (get s "id")))
+    (is (some? (get s "fn")))
+    (is (some? (get s "args")))
+    (is (not= "custom" (get s "fn")) "fn:custom は宣言の外に出る抜け道")))
+
+(deftest step-ids-are-unique-within-their-pipeline
+  ;; `depends_on` は step id で他の step を指す。同じ pipeline に同名 id が 2 つ
+  ;; あると依存が曖昧になる。**pipeline を跨いだ重複は正常**（実測: latestSnapshot と
+  ;; relationRollup は 2 つの pipeline に出る）ので、そこは縛らない。
+  (doseq [p pipelines]
+    (let [ids (map #(get % "id") (get p "steps"))]
+      (is (= (count ids) (count (set ids)))
+          (str "step id が重複している: " (pr-str ids))))))
+
+(deftest cron-expressions-have-five-fields
+  (doseq [p pipelines
+          :when (= "cron" (get-in p ["trigger" "type"]))]
+    (let [c (get-in p ["trigger" "cron"])]
+      (is (= 5 (count (str/split (str/trim c) #"\s+")))
+          (str "cron が 5 field でない: " c)))))
+
+;; ── governance rule が散文で述べていることを、散文の外で保つ ──────────────
+
+(deftest the-no-heavy-ddl-rule-exists-and-the-pipelines-obey-it
+  ;; `RULE-GRAPH-SOS-NO-HEAVY-DDL` は「重い DDL を直接実行しない」と**散文で**
+  ;; 述べている。散文は自分が真でなくなったことに気づかない。SQL を実際に見る。
+  (let [rules (get-in manifest ["governance" "rules"])
+        ids (set (map #(get % "id") rules))
+        sql (js/JSON.stringify (clj->js pipelines))]
+    (is (contains? ids "RULE-GRAPH-SOS-NO-HEAVY-DDL"))
+    (is (contains? ids "RULE-GRAPH-SOS-COMPACT-SNAPSHOT"))
+    (is (= 2 (count rules)))
+    (doseq [[label re] [["CREATE" #"(?i)\bCREATE\s+(INDEX|MATERIALIZED\s+VIEW|TABLE)\b"]
+                        ["DROP"   #"(?i)\bDROP\s+(INDEX|MATERIALIZED\s+VIEW|TABLE)\b"]
+                        ["ALTER"  #"(?i)\bALTER\s+TABLE\b"]]]
+      (is (nil? (re-find re sql))
+          (str label " の重い DDL が pipeline SQL に現れた —— RULE-GRAPH-SOS-NO-HEAVY-DDL 違反")))))
+
+(deftest the-compact-snapshot-rule-still-describes-what-the-pipelines-do
+  ;; catalog は境界のある問い合わせで読み、書くのは rollup / findings の snapshot
+  ;; だけ、というのが RULE-GRAPH-SOS-COMPACT-SNAPSHOT の主張。
+  (let [sql (js/JSON.stringify (clj->js pipelines))]
+    (is (str/includes? sql "information_schema.tables") "relation catalog を読んでいる")
+    (is (str/includes? sql "pg_indexes") "index catalog を読んでいる")
+    (is (str/includes? sql "vertex_graph_sos_intel_snapshot") "snapshot に書いている")
+    (is (= 1 (count (filter #(= "graph.write" (get % "fn")) steps)))
+        "書き込む step はちょうど 1 本")))
+
+;; ── 2 つの名乗り ────────────────────────────────────────────────────
+
+(deftest the-two-identities-still-disagree
+  ;; これは「健全」の主張ではない。**割れていること自体を固定している。**
+  ;; manifest と substrate は `did:web:graph-sos-intel.etzhayyim.com` を名乗り、
+  ;; 実際に配信されている DID document は `did:web:etzhayyim.com:actor:graph-sos-intel`。
+  ;; 揃ったらこのテストが赤くなり、README ごと測り直せと言う。
+  (is (= "did:web:graph-sos-intel.etzhayyim.com" (get manifest "@id")))
+  (is (= "did:web:etzhayyim.com:actor:graph-sos-intel" (get did-doc "id")))
+  (is (not= (get manifest "@id") (get did-doc "id")) "2 つの名乗りは今も食い違っている")
+  (is (= (get manifest "@id") mk/actor-did)
+      "substrate は manifest 側（配信されていない方）の DID を名乗る"))
+
+(deftest did-service-ids-are-fragments-of-this-did
+  (let [doc-did (get did-doc "id")]
+    (is (= 2 (count (get did-doc "service"))))
+    (doseq [s (get did-doc "service")]
+      (is (str/starts-with? (get s "id") (str doc-did "#"))
+          (str "service id が自分の DID の fragment でない: " (get s "id")))
+      (is (str/starts-with? (get s "serviceEndpoint") "https://")
+          (str "service endpoint が https でない: " (get s "serviceEndpoint"))))))
+
+;; ── 走らせられるが、この suite の外に居るテスト ────────────────────────
+
+(deftest the-checked-in-vitest-still-asserts-the-truth
+  ;; `actor-manifest.test.ts` は package.json が無いので `npx --yes vitest` を
+  ;; 取りに行ける環境でしか走らない（= オフラインでは走らない）。走らないテストは
+  ;; 黙って嘘になる。**その literal が manifest と一致していることだけは、
+  ;; ここで、オフラインで保つ。**
+  (let [lit (fn [re] (some-> (re-find re vitest-src) second))]
+    (is (= (get manifest "@id") (lit #"manifest\[\"@id\"\]\)\.toBe\(\n?\s*\"([^\"]+)\"")))
+    (is (= (get manifest "@context") (lit #"manifest\[\"@context\"\]\)\.toBe\(\n?\s*\"([^\"]+)\"")))
+    (is (= (get manifest "name") (lit #"manifest\.name\)\.toBe\(\"([^\"]+)\"")))
+    (is (= (get manifest "nanoid") (lit #"manifest\.nanoid\)\.toBe\(\"([^\"]+)\"")))
+    (is (= (get manifest "runtime") (lit #"manifest\.runtime\)\.toBe\(\"([^\"]+)\"")))))
+
+(deftest the-vitest-primitive-allowlist-still-covers-every-declared-capability
+  ;; allowlist が縮むと、実際には宣言されている capability が「不正」と判定される。
+  ;; 逆に capability が増えて allowlist に無ければ、あちらのテストが赤くなる ——
+  ;; **あちらが走らない環境では誰も気づかない**ので、ここでも見る。
+  (let [allow (set (map second (re-seq #"\"([^\"]+)\",\n" (re-find #"VALID_PRIMITIVES = new Set\(\[[^\]]*\]" vitest-src))))]
+    (is (= 12 (count allow)) "allowlist の大きさ")
+    (is (empty? (remove allow (get manifest "capabilities")))
+        (str "allowlist に無い capability を宣言している: "
+             (pr-str (remove allow (get manifest "capabilities")))))
+    (is (empty? (remove allow (map #(get % "fn") steps))))))
+
+(deftest the-vitest-names-the-three-xrpc-surfaces-the-manifest-serves
+  (doseq [n nsids]
+    (is (str/includes? vitest-src (str "\"" n "\""))
+        (str "vitest が知らない xrpc surface が manifest に在る: " n))))
+
+;; ── storage profile ───────────────────────────────────────────────────
+
+(deftest the-storage-profile-declares-a-local-append-only-actor
+  ;; README がこの repo を「actor の identity・manifest・gate model の置き場」と
+  ;; 述べている。profile はそれを機械可読な形で言っている面なので、両者がずれると
+  ;; 「どこに何が保管されるか」の答えが 2 つになる。
+  (let [p (reader/read-string (fs/readFileSync "storage-profile.edn" "utf8"))]
+    (is (= :kotoba/local-agent-kagi-chunks-v1 (:profile/id p)))
+    (is (= :actor (:repo/kind p)))
+    (is (= :local (:query/location p)))
+    (is (false? (:query/remote-capability? p)))
+    (is (= :deny (:working-edn/private-git-policy p)))
+    (is (= :append-only-transactions (:persistence/shape p))
+        "append-only を名乗る面で上書き形の persistence を宣言していない")))
