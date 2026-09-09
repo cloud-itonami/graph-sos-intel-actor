@@ -6,7 +6,7 @@
    気づかない。だからここでは期待値を文書から抜き、比較相手は実際に計算する。
    文書を直せば期待値も動く。実物が動けば赤くなる。"
   (:require [clojure.test :refer [deftest is]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [graph_sos_intel.murakumo :as mk]
             ["node:fs" :as fs]))
 

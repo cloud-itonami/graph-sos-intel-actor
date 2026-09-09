@@ -9,7 +9,7 @@
 
    count は**両方向に**落ちる。増えても減っても赤。"
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [cljs.reader :as reader]
             [graph_sos_intel.murakumo :as mk]
             ["node:fs" :as fs]))
@@ -31,7 +31,7 @@
   (concat nsids (get manifest "requiredCollections") (get manifest "requiredLoops")))
 
 (defn- surface->cell [s]
-  (keyword (str/lower-case (last (str/split s #"\.")))))
+  (keyword (str/lower (last (str/split s #"\.")))))
 
 (deftest the-substrate-cells-are-exactly-the-surfaces-the-manifest-declares
   ;; 実測 2026-09-03: 9 = xrpc 3 + requiredCollections 2 + requiredLoops 4。
