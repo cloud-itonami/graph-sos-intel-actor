@@ -80,7 +80,7 @@
   ;; `nbb --classpath src` と書いてあるので、src/ の下に ns が居ることが前提。
   ;; ディレクトリを動かすと quickstart が踏めなくなる。
   (is (str/includes? quickstart "nbb --classpath src"))
-  (is (fs/existsSync "src/graph_sos_intel/murakumo.cljc")))
+  (is (fs/existsSync "src/graph_sos_intel/murakumo.cljk")))
 
 ;; ── README ────────────────────────────────────────────────────────────
 
