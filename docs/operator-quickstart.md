@@ -55,7 +55,7 @@ The pure boundary lives in `src/graph_sos_intel/murakumo.cljk`. With **no
 attestations**, every cell plan is `:blocked` and carries zero effects:
 
 ```bash
-nbb --classpath src -e '
+kbb --backend sci --classpath src -e '
 (require (quote [graph_sos_intel.murakumo :as m]))
 (let [blocked (m/cell-plan :health {:attestations {}})]
   (println "blocked status:" (:status blocked))
@@ -75,7 +75,7 @@ With all seven common gates attested, the same cell becomes `:ready` and
 plans one `:mst/put-record` effect per collection:
 
 ```bash
-nbb --classpath src -e '
+kbb --backend sci --classpath src -e '
 (require (quote [graph_sos_intel.murakumo :as m]))
 (let [atts (into {} (map (fn [g] [g true]) m/common-gates))
       ready (m/cell-plan :health {:attestations atts

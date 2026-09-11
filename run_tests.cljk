@@ -1,7 +1,7 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; run_tests.cljk — graph-sos-intel-actor の検査。
 ;;
-;;   nbb --classpath src:test run_tests.cljk
+;;   kbb --backend sci --classpath src:test run_tests.cljk
 ;;
 ;; この repo は 2026-05 の移行 snapshot 以来、**この runtime で走るテストを
 ;; 1 本も持っていなかった。** `actor-manifest.test.ts` は在るが package.json が

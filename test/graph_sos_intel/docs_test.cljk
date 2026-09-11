@@ -77,7 +77,7 @@
         "quickstart が示す effects の形")))
 
 (deftest the-quickstart-command-really-passes-the-classpath-the-source-needs
-  ;; `nbb --classpath src` と書いてあるので、src/ の下に ns が居ることが前提。
+  ;; `kbb --backend sci --classpath src` と書いてあるので、src/ の下に ns が居ることが前提。
   ;; ディレクトリを動かすと quickstart が踏めなくなる。
   (is (str/includes? quickstart "nbb --classpath src"))
   (is (fs/existsSync "src/graph_sos_intel/murakumo.cljk")))
