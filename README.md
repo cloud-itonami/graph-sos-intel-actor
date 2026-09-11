@@ -18,7 +18,7 @@ execution to the existing RisingWave DDL governance path
 |---|---|
 | [`actor-manifest.jsonld`](actor-manifest.jsonld) | Declarative actor manifest: capabilities, cron + xrpc pipelines, governance rules |
 | [`actor-manifest.test.ts`](actor-manifest.test.ts) | vitest invariants over the manifest (canonical identity, MCP primitives only, no heavy DDL in any pipeline SQL) |
-| [`src/graph_sos_intel/murakumo.cljc`](src/graph_sos_intel/murakumo.cljc) | Pure actor boundary: `cell-plan` checks the 7 required gates and returns `:blocked` (no effects) or `:ready` with `:mst/put-record` effects |
+| [`src/graph_sos_intel/murakumo.cljk`](src/graph_sos_intel/murakumo.cljk) | Pure actor boundary: `cell-plan` checks the 7 required gates and returns `:blocked` (no effects) or `:ready` with `:mst/put-record` effects |
 | [`storage-profile.edn`](storage-profile.edn) | Repository storage profile declaration (`:kotoba/local-agent-kagi-chunks-v1`) |
 | [`docs/operator-quickstart.md`](docs/operator-quickstart.md) | Runnable operator quickstart — every step in it has been executed as written |
 

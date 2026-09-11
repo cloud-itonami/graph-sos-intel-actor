@@ -1,6 +1,6 @@
 (ns graph_sos_intel.manifest-test
   "descriptor 本体（`actor-manifest.jsonld` / `.well-known/did.json` /
-   `storage-profile.edn`）と、`src/graph_sos_intel/murakumo.cljc` の substrate を
+   `storage-profile.edn`）と、`src/graph_sos_intel/murakumo.cljk` の substrate を
    突き合わせる。
 
    この repo は宣言が 3 面（manifest / DID document / cljc substrate）に割れて

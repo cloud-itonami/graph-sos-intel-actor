@@ -1,5 +1,5 @@
 (ns graph_sos_intel.gate-test
-  "`src/graph_sos_intel/murakumo.cljc` の deny-by-default gate を、
+  "`src/graph_sos_intel/murakumo.cljk` の deny-by-default gate を、
    **緩む方向と きつくなる方向の両方から** 押す。
 
    緩む方向だけを見ていると『事故に見えない事故』を取り逃がす —— attestation の

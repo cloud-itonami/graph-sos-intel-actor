@@ -51,7 +51,7 @@ pipeline.
 
 ## 3. Exercise the actor boundary — deny by default
 
-The pure boundary lives in `src/graph_sos_intel/murakumo.cljc`. With **no
+The pure boundary lives in `src/graph_sos_intel/murakumo.cljk`. With **no
 attestations**, every cell plan is `:blocked` and carries zero effects:
 
 ```bash
