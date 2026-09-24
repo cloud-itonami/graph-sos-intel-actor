@@ -8,7 +8,7 @@
    ので、片方だけ動いても誰も気づかない —— ここがその置き場である。
 
    count は**両方向に**落ちる。増えても減っても赤。"
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [cljs.reader :as reader]
             [graph_sos_intel.murakumo :as mk]
