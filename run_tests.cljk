@@ -17,7 +17,7 @@
 ;;   manifest-test  manifest / DID document / storage profile と substrate の突き合わせ
 ;;   docs-test      README と quickstart が主張していることの再現
 (ns run-tests
-  (:require [clojure.test :as t]
+  (:require [kotoba.test :as t]
             [graph_sos_intel.gate-test]
             [graph_sos_intel.manifest-test]
             [graph_sos_intel.docs-test]))
