@@ -9,7 +9,7 @@
 ;; 静かに何も検査しない。**走らないテストは、テストが無いより悪い** ——
 ;; 在ることが検査済みに見える。
 ;;
-;; workspace の規則（superproject CLAUDE.md）で script host は nbb に一本化されて
+;; workspace の規則（superproject AGENTS.md）で script host は nbb に一本化されて
 ;; おり、新規の .ts / .mjs / .sh は禁止。よって runner は nbb + cljs.test である。
 ;;
 ;; 3 面を見る:
